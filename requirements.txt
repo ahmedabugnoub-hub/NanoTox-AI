@@ -4,6 +4,3 @@ numpy
 matplotlib
 scipy
 scikit-learn
-gspread
-oauth2client
-joblib
