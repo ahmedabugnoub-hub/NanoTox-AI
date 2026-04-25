@@ -4,221 +4,258 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from sklearn.ensemble import GradientBoostingRegressor
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import joblib
+import os
 
 # =============================
-# PAGE CONFIG
+# GOOGLE SHEETS
 # =============================
-st.set_page_config(page_title="NanoTox AI", layout="wide")
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/drive"]
 
-st.title("NanoTox AI – Multi Pesticides")
-st.caption("Manual Data Entry + Auto Training Model")
-
-# =============================
-# DATASET
-# =============================
-if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame({
-        "Pesticide":["Emamectin benzoate","Lambda-cyhalothrin","Imidacloprid"],
-        "AI":[10,10,12],
-        "Surfactant":[15,15,20],
-        "Solvent":[5,5,6],
-        "Sonication":[10,10,15],
-        "DLS":[150,220,120],
-        "Zeta":[-25,-10,-30],
-        "logP":[5,7,0.57],
-        "Solubility":[0.02,0.005,610],
-        "MW":[886,449,255],
-        "LC50":[0.25,0.55,0.18]
-    })
-
-df = st.session_state.df
+creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+client = gspread.authorize(creds)
+sheet = client.open("NanoTox_Data").sheet1
 
 # =============================
-# ADD DATA
+# LOAD DATA
 # =============================
-st.sidebar.subheader("➕ Add New Data")
-
-pest = st.sidebar.text_input("Pesticide Name")
-
-ai_in = st.sidebar.number_input("AI (%)",0.0,100.0,10.0)
-surf_in = st.sidebar.number_input("Surfactant (%)",0.0,100.0,15.0)
-solv_in = st.sidebar.number_input("Solvent (%)",0.0,100.0,5.0)
-sonic_in = st.sidebar.number_input("Sonication (min)",0,60,10)
-dls_in = st.sidebar.number_input("DLS (nm)",0.0,500.0,150.0)
-zeta_in = st.sidebar.number_input("Zeta (mV)",-100.0,100.0,-25.0)
-logp_in = st.sidebar.number_input("logP",0.0,10.0,5.0)
-solub_in = st.sidebar.number_input("Solubility (mg/L)",0.0,1000.0,0.02)
-mw_in = st.sidebar.number_input("MW (g/mol)",0.0,2000.0,800.0)
-lc50_in = st.sidebar.number_input("LC50 (ppm)",0.0,10.0,0.2)
-
-if st.sidebar.button("Add Data"):
-    if pest.strip() == "":
-        st.sidebar.error("Enter pesticide name")
-    else:
-        new_row = pd.DataFrame([{
-            "Pesticide":pest,
-            "AI":ai_in,
-            "Surfactant":surf_in,
-            "Solvent":solv_in,
-            "Sonication":sonic_in,
-            "DLS":dls_in,
-            "Zeta":zeta_in,
-            "logP":logp_in,
-            "Solubility":solub_in,
-            "MW":mw_in,
-            "LC50":lc50_in
-        }])
-        st.session_state.df = pd.concat([df,new_row],ignore_index=True)
-        st.success("Data Added")
-        st.rerun()
+def load_data():
+    data = sheet.get_all_records()
+    if len(data) == 0:
+        df = pd.DataFrame({
+            "Pesticide":["Emamectin","Lambda","Imidacloprid"],
+            "AI":[10,10,12],
+            "Surfactant":[15,15,20],
+            "Solvent":[5,5,6],
+            "Sonication":[10,10,15],
+            "DLS":[150,220,120],
+            "Zeta":[-25,-10,-30],
+            "logP":[5,7,0.57],
+            "Solubility":[0.02,0.005,610],
+            "MW":[886,449,255],
+            "LC50":[0.25,0.55,0.18]
+        })
+        return df
+    return pd.DataFrame(data)
 
 # =============================
-# DATA VIEW + ID
+# SAVE DATA
 # =============================
-st.subheader("📊 Dataset")
-
-df_display = df.copy()
-df_display.insert(0, "ID", range(1, len(df_display) + 1))
-
-st.dataframe(
-    df_display,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "ID": st.column_config.NumberColumn("ID", width="small")
-    }
-)
-
-# =============================
-# DELETE DATA
-# =============================
-st.subheader("🗑️ Delete Data")
-
-if len(df) > 0:
-    row_to_delete = st.selectbox(
-        "Select row",
-        df.index,
-        format_func=lambda x: f"{x+1} - {df.loc[x,'Pesticide']}"
-    )
-
-    if st.button("Delete Selected Row"):
-        st.session_state.df = df.drop(row_to_delete).reset_index(drop=True)
-        st.success("Deleted")
-        st.rerun()
-
-# =============================
-# EDIT DATA
-# =============================
-st.subheader("✏️ Edit Data")
-
-if len(df) > 0:
-    row_to_edit = st.selectbox(
-        "Select row to edit",
-        df.index,
-        format_func=lambda x: f"{x+1} - {df.loc[x,'Pesticide']}"
-    )
-
-    selected_row = df.loc[row_to_edit]
-
-    new_name = st.text_input("Pesticide Name", value=selected_row["Pesticide"])
-    new_ai = st.number_input("AI (%)", value=float(selected_row["AI"]))
-    new_surf = st.number_input("Surfactant (%)", value=float(selected_row["Surfactant"]))
-    new_solv = st.number_input("Solvent (%)", value=float(selected_row["Solvent"]))
-    new_sonic = st.number_input("Sonication (min)", value=int(selected_row["Sonication"]))
-    new_dls = st.number_input("DLS (nm)", value=float(selected_row["DLS"]))
-    new_zeta = st.number_input("Zeta (mV)", value=float(selected_row["Zeta"]))
-    new_logp = st.number_input("logP", value=float(selected_row["logP"]))
-    new_solub = st.number_input("Solubility", value=float(selected_row["Solubility"]))
-    new_mw = st.number_input("MW", value=float(selected_row["MW"]))
-    new_lc50 = st.number_input("LC50", value=float(selected_row["LC50"]))
-
-    if st.button("Update Row"):
-        st.session_state.df.loc[row_to_edit] = [
-            new_name,new_ai,new_surf,new_solv,new_sonic,
-            new_dls,new_zeta,new_logp,new_solub,new_mw,new_lc50
-        ]
-        st.success("Updated Successfully")
-        st.rerun()
+def save_data(df):
+    sheet.clear()
+    sheet.update([df.columns.values.tolist()] + df.values.tolist())
 
 # =============================
 # MODEL
 # =============================
-if len(df) < 1:
-    st.info("Dataset is empty. Please add data.")
-else:
-    X = df[[
-        "AI","Surfactant","Solvent","Sonication",
-        "DLS","Zeta","logP","Solubility","MW"
-    ]]
-    y = df["LC50"]
+MODEL_FILE = "model.pkl"
 
-    model = GradientBoostingRegressor()
-    model.fit(X,y)
+def load_model():
+    if os.path.exists(MODEL_FILE):
+        return joblib.load(MODEL_FILE)
+    return GradientBoostingRegressor()
+
+def save_model(model):
+    joblib.dump(model, MODEL_FILE)
+
+# =============================
+# UI
+# =============================
+st.set_page_config(page_title="NanoTox AI", layout="wide")
+
+st.title("NanoTox AI – Smart AI Platform")
+st.caption("Adaptive AI + Optimization + Nano Analysis")
+
+# =============================
+# DATA
+# =============================
+if "df" not in st.session_state:
+    st.session_state.df = load_data()
+
+df = st.session_state.df
+
+st.subheader("📊 Dataset")
+st.dataframe(df, use_container_width=True)
+
+# =============================
+# ADD DATA
+# =============================
+st.sidebar.header("➕ Add Data")
+
+pest_input = st.sidebar.text_input("New Pesticide Name")
+
+ai = st.sidebar.slider("AI (%)",1.0,20.0,10.0)
+surf = st.sidebar.slider("Surfactant (%)",5.0,30.0,15.0)
+solv = st.sidebar.slider("Solvent (%)",1.0,10.0,5.0)
+sonic = st.sidebar.slider("Sonication (min)",1,30,10)
+dls = st.sidebar.slider("DLS (nm)",50,300,150)
+zeta = st.sidebar.slider("Zeta (mV)",-60,60,-25)
+logp = st.sidebar.number_input("logP",value=5.0)
+solub = st.sidebar.number_input("Solubility",value=0.02)
+mw = st.sidebar.number_input("MW",value=800.0)
+lc50 = st.sidebar.number_input("LC50",value=0.2)
+
+if st.sidebar.button("Save Data"):
+    new = pd.DataFrame([[pest_input,ai,surf,solv,sonic,dls,zeta,logp,solub,mw,lc50]],
+                       columns=df.columns)
+    df = pd.concat([df,new],ignore_index=True)
+    st.session_state.df = df
+    save_data(df)
+    st.success("Saved ✔")
+
+# =============================
+# MODEL
+# =============================
+if len(df) > 1:
+
+    df_encoded = pd.get_dummies(df, columns=["Pesticide"])
+
+    X = df_encoded.drop(columns=["LC50"])
+    y = df_encoded["LC50"]
+
+    model = load_model()
+    model.fit(X, y)
+    save_model(model)
 
     # =============================
-    # INPUT PARAMETERS
+    # PREDICTION
     # =============================
-    st.sidebar.subheader("⚙️ Input Parameters")
+    st.sidebar.header("⚙️ Prediction")
 
-    ai = st.sidebar.slider("AI (%)",1.0,20.0,10.0)
-    surf = st.sidebar.slider("Surfactant (%)",5.0,30.0,15.0)
-    solv = st.sidebar.slider("Solvent (%)",1.0,10.0,5.0)
-    sonic = st.sidebar.slider("Sonication (min)",1,30,10)
-    dls = st.sidebar.slider("DLS (nm)",50,300,150)
-    zeta = st.sidebar.slider("Zeta (mV)",-60,60,-25)
-    logp = st.sidebar.number_input("logP",value=5.0)
-    solub = st.sidebar.number_input("Solubility (mg/L)",value=0.02)
-    mw = st.sidebar.number_input("MW (g/mol)",value=800.0)
+    pest = st.sidebar.selectbox("Select Pesticide", df["Pesticide"].unique())
 
-    input_data = [[ai,surf,solv,sonic,dls,zeta,logp,solub,mw]]
+    input_dict = {
+        "AI": ai,
+        "Surfactant": surf,
+        "Solvent": solv,
+        "Sonication": sonic,
+        "DLS": dls,
+        "Zeta": zeta,
+        "logP": logp,
+        "Solubility": solub,
+        "MW": mw
+    }
 
-    pred = model.predict(input_data)[0]
+    for col in X.columns:
+        if "Pesticide_" in col:
+            input_dict[col] = 1 if col == f"Pesticide_{pest}" else 0
+
+    input_df = pd.DataFrame([input_dict])
+
+    pred = model.predict(input_df)[0]
     lc90 = pred * 2.5
 
-    # =============================
-    # RESULTS
-    # =============================
     st.subheader("📊 Results")
-
-    c1,c2 = st.columns(2)
-    c1.metric("LC50 (ppm)",f"{pred:.4f}")
-    c2.metric("LC90 (ppm)",f"{lc90:.4f}")
+    c1, c2 = st.columns(2)
+    c1.metric("LC50", round(pred,4))
+    c2.metric("LC90", round(lc90,4))
 
     # =============================
-    # DLS
+    # 🎯 OPTIMIZATION
+    # =============================
+    st.subheader("🎯 Optimal Formulation")
+
+    if st.button("Find Best Formulation"):
+
+        best_lc50 = 999
+        best = None
+
+        for _ in range(300):
+
+            test = {
+                "AI": np.random.uniform(5,10),
+                "Surfactant": np.random.uniform(12,20),
+                "Solvent": np.random.uniform(3,8),
+                "Sonication": np.random.uniform(5,30),
+                "DLS": np.random.uniform(50,150),
+                "Zeta": np.random.uniform(-45,-20),
+                "logP": logp,
+                "Solubility": solub,
+                "MW": mw
+            }
+
+            for col in X.columns:
+                if "Pesticide_" in col:
+                    test[col] = 1 if col == f"Pesticide_{pest}" else 0
+
+            val = model.predict(pd.DataFrame([test]))[0]
+
+            if val < best_lc50:
+                best_lc50 = val
+                best = test
+
+        st.json(best)
+        st.success(f"Best LC50 = {best_lc50:.4f}")
+
+    # =============================
+    # ⚖️ COMPARISON
+    # =============================
+    st.subheader("⚖️ Comparison")
+
+    if st.button("Compare Pesticides"):
+
+        res = []
+
+        for p in df["Pesticide"].unique():
+
+            test = {
+                "AI": ai,
+                "Surfactant": surf,
+                "Solvent": solv,
+                "Sonication": sonic,
+                "DLS": dls,
+                "Zeta": zeta,
+                "logP": logp,
+                "Solubility": solub,
+                "MW": mw
+            }
+
+            for col in X.columns:
+                if "Pesticide_" in col:
+                    test[col] = 1 if col == f"Pesticide_{p}" else 0
+
+            val = model.predict(pd.DataFrame([test]))[0]
+
+            res.append({"Pesticide": p, "LC50": val})
+
+        res_df = pd.DataFrame(res).sort_values("LC50")
+
+        st.dataframe(res_df)
+        st.bar_chart(res_df.set_index("Pesticide"))
+
+        st.success(f"Best: {res_df.iloc[0]['Pesticide']}")
+
+    # =============================
+    # 📊 DLS
     # =============================
     st.subheader("📊 DLS Distribution")
 
-    data = np.random.normal(dls,dls*0.08,800)
+    data = np.random.normal(dls, dls*0.08, 800)
 
-    fig2, ax2 = plt.subplots()
-    count,bins,_ = ax2.hist(data,bins=20,edgecolor='black')
+    fig, ax = plt.subplots()
+    count,bins,_ = ax.hist(data, bins=20)
 
-    mu,sigma = norm.fit(data)
-    x = np.linspace(min(bins),max(bins),200)
-    y_curve = norm.pdf(x,mu,sigma)
-    y_scaled = y_curve * max(count)/max(y_curve)
+    mu, sigma = norm.fit(data)
+    x = np.linspace(min(bins), max(bins), 200)
+    y = norm.pdf(x, mu, sigma)
 
-    ax2.plot(x,y_scaled,'r')
-    ax2.set_xlabel("Diameter (nm)")
-    ax2.set_ylabel("Number")
-
-    st.pyplot(fig2)
+    ax.plot(x, y * max(count)/max(y), 'r')
+    st.pyplot(fig)
 
     # =============================
-    # ZETA
+    # ⚡ ZETA
     # =============================
     st.subheader("⚡ Zeta Potential")
 
     x = np.linspace(-150,150,2000)
-    power = np.exp(-(x - zeta)**2/(2*5**2))
+    y = np.exp(-(x - zeta)**2/(2*5**2))
 
-    fig3, ax3 = plt.subplots()
-    ax3.plot(x,power,'r')
-    ax3.set_xlabel("Zeta (mV)")
-    ax3.set_ylabel("Power")
-
-    st.pyplot(fig3)
+    fig2, ax2 = plt.subplots()
+    ax2.plot(x, y, 'r')
+    st.pyplot(fig2)
 
 # =============================
 # FOOTER
