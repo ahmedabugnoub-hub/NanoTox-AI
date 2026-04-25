@@ -8,47 +8,90 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import joblib
 import os
-import json
 
 # =============================
-# GOOGLE SHEETS (FIXED)
+# CONFIG
+# =============================
+st.set_page_config(page_title="NanoTox AI", layout="wide")
+st.title("NanoTox AI – Smart Platform")
+st.caption("Adaptive AI + Cloud/Local Mode")
+
+# =============================
+# GOOGLE SHEETS (SMART MODE)
 # =============================
 scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/drive"]
 
-# 🔥 الحل هنا
-creds_dict = st.secrets["gcp_service_account"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
-sheet = client.open("NanoTox_Data").sheet1
+use_cloud = True
+
+try:
+    creds_dict = st.secrets["gcp_service_account"]
+
+    # fix private_key
+    if "\\n" in creds_dict["private_key"]:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open("NanoTox_Data").sheet1
+
+except:
+    use_cloud = False
+    st.warning("⚠️ Running in LOCAL mode (No Google Sheets)")
+
+# =============================
+# LOCAL STORAGE
+# =============================
+LOCAL_FILE = "data.csv"
 
 # =============================
 # LOAD DATA
 # =============================
 def load_data():
-    data = sheet.get_all_records()
-    if len(data) == 0:
-        return pd.DataFrame({
-            "Pesticide":["Emamectin","Lambda","Imidacloprid"],
-            "AI":[10,10,12],
-            "Surfactant":[15,15,20],
-            "Solvent":[5,5,6],
-            "Sonication":[10,10,15],
-            "DLS":[150,220,120],
-            "Zeta":[-25,-10,-30],
-            "logP":[5,7,0.57],
-            "Solubility":[0.02,0.005,610],
-            "MW":[886,449,255],
-            "LC50":[0.25,0.55,0.18]
-        })
-    return pd.DataFrame(data)
+
+    # Cloud
+    if use_cloud:
+        try:
+            data = sheet.get_all_records()
+            if len(data) > 0:
+                return pd.DataFrame(data)
+        except:
+            pass
+
+    # Local
+    if os.path.exists(LOCAL_FILE):
+        return pd.read_csv(LOCAL_FILE)
+
+    # Default
+    return pd.DataFrame({
+        "Pesticide":["Emamectin","Lambda","Imidacloprid"],
+        "AI":[10,10,12],
+        "Surfactant":[15,15,20],
+        "Solvent":[5,5,6],
+        "Sonication":[10,10,15],
+        "DLS":[150,220,120],
+        "Zeta":[-25,-10,-30],
+        "logP":[5,7,0.57],
+        "Solubility":[0.02,0.005,610],
+        "MW":[886,449,255],
+        "LC50":[0.25,0.55,0.18]
+    })
 
 # =============================
 # SAVE DATA
 # =============================
 def save_data(df):
-    sheet.clear()
-    sheet.update([df.columns.values.tolist()] + df.values.tolist())
+
+    # Local save
+    df.to_csv(LOCAL_FILE, index=False)
+
+    # Cloud save
+    if use_cloud:
+        try:
+            sheet.clear()
+            sheet.update([df.columns.values.tolist()] + df.values.tolist())
+        except:
+            st.error("❌ Failed to save to Google Sheets")
 
 # =============================
 # MODEL
@@ -64,21 +107,16 @@ def save_model(model):
     joblib.dump(model, MODEL_FILE)
 
 # =============================
-# UI
-# =============================
-st.set_page_config(page_title="NanoTox AI", layout="wide")
-
-st.title("NanoTox AI – Smart AI Platform")
-st.caption("Adaptive AI + Optimization + Nano Analysis")
-
-# =============================
-# DATA
+# INIT DATA
 # =============================
 if "df" not in st.session_state:
     st.session_state.df = load_data()
 
 df = st.session_state.df
 
+# =============================
+# DATA VIEW
+# =============================
 st.subheader("📊 Dataset")
 st.dataframe(df, use_container_width=True)
 
@@ -87,14 +125,14 @@ st.dataframe(df, use_container_width=True)
 # =============================
 st.sidebar.header("➕ Add Data")
 
-pest_input = st.sidebar.text_input("New Pesticide Name")
+pest_input = st.sidebar.text_input("Pesticide")
 
 ai = st.sidebar.slider("AI (%)",1.0,20.0,10.0)
 surf = st.sidebar.slider("Surfactant (%)",5.0,30.0,15.0)
 solv = st.sidebar.slider("Solvent (%)",1.0,10.0,5.0)
-sonic = st.sidebar.slider("Sonication (min)",1,30,10)
-dls = st.sidebar.slider("DLS (nm)",50,300,150)
-zeta = st.sidebar.slider("Zeta (mV)",-60,60,-25)
+sonic = st.sidebar.slider("Sonication",1,30,10)
+dls = st.sidebar.slider("DLS",50,300,150)
+zeta = st.sidebar.slider("Zeta",-60,60,-25)
 logp = st.sidebar.number_input("logP",value=5.0)
 solub = st.sidebar.number_input("Solubility",value=0.02)
 mw = st.sidebar.number_input("MW",value=800.0)
@@ -170,6 +208,9 @@ if len(df) > 1:
     y_curve = norm.pdf(x, mu, sigma)
 
     ax.plot(x, y_curve * max(count)/max(y_curve), 'r')
+    ax.set_xlabel("Size (nm)")
+    ax.set_ylabel("Frequency")
+
     st.pyplot(fig)
 
     # =============================
@@ -182,6 +223,9 @@ if len(df) > 1:
 
     fig2, ax2 = plt.subplots()
     ax2.plot(x, y_curve, 'r')
+    ax2.set_xlabel("Zeta (mV)")
+    ax2.set_ylabel("Stability")
+
     st.pyplot(fig2)
 
 # =============================
@@ -190,6 +234,6 @@ if len(df) > 1:
 st.markdown("---")
 st.markdown(
     "<center><b>Ahmed Abdulhakim</b><br>"
-    "ahmed.abdulhakim_a015@agr.kfs.edu.eg</center>",
+    "NanoTox AI Platform</center>",
     unsafe_allow_html=True
 )
