@@ -4,66 +4,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from sklearn.ensemble import GradientBoostingRegressor
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import joblib
-import os
 
 # =============================
-# CONFIG
+# PAGE CONFIG
 # =============================
 st.set_page_config(page_title="NanoTox AI", layout="wide")
-st.title("NanoTox AI – Smart Platform")
-st.caption("Adaptive AI + Cloud/Local Mode")
+
+st.title("NanoTox AI – Multi Pesticides")
+st.caption("Manual Data Entry + Auto Training Model")
 
 # =============================
-# GOOGLE SHEETS (SMART MODE)
+# DATASET
 # =============================
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
-
-use_cloud = True
-
-try:
-    creds_dict = st.secrets["gcp_service_account"]
-
-    # fix private_key
-    if "\\n" in creds_dict["private_key"]:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    sheet = client.open("NanoTox_Data").sheet1
-
-except:
-    use_cloud = False
-    st.warning("⚠️ Running in LOCAL mode (No Google Sheets)")
-
-# =============================
-# LOCAL STORAGE
-# =============================
-LOCAL_FILE = "data.csv"
-
-# =============================
-# LOAD DATA
-# =============================
-def load_data():
-
-    # Cloud
-    if use_cloud:
-        try:
-            data = sheet.get_all_records()
-            if len(data) > 0:
-                return pd.DataFrame(data)
-        except:
-            pass
-
-    # Local
-    if os.path.exists(LOCAL_FILE):
-        return pd.read_csv(LOCAL_FILE)
-
-    # Default
-    return pd.DataFrame({
+if "df" not in st.session_state:
+    st.session_state.df = pd.DataFrame({
         "Pesticide":["Emamectin","Lambda","Imidacloprid"],
         "AI":[10,10,12],
         "Surfactant":[15,15,20],
@@ -77,42 +31,46 @@ def load_data():
         "LC50":[0.25,0.55,0.18]
     })
 
-# =============================
-# SAVE DATA
-# =============================
-def save_data(df):
-
-    # Local save
-    df.to_csv(LOCAL_FILE, index=False)
-
-    # Cloud save
-    if use_cloud:
-        try:
-            sheet.clear()
-            sheet.update([df.columns.values.tolist()] + df.values.tolist())
-        except:
-            st.error("❌ Failed to save to Google Sheets")
-
-# =============================
-# MODEL
-# =============================
-MODEL_FILE = "model.pkl"
-
-def load_model():
-    if os.path.exists(MODEL_FILE):
-        return joblib.load(MODEL_FILE)
-    return GradientBoostingRegressor()
-
-def save_model(model):
-    joblib.dump(model, MODEL_FILE)
-
-# =============================
-# INIT DATA
-# =============================
-if "df" not in st.session_state:
-    st.session_state.df = load_data()
-
 df = st.session_state.df
+
+# =============================
+# ADD DATA
+# =============================
+st.sidebar.subheader("➕ Add New Data")
+
+pest = st.sidebar.text_input("Pesticide Name")
+
+ai_in = st.sidebar.number_input("AI (%)",0.0,100.0,10.0)
+surf_in = st.sidebar.number_input("Surfactant (%)",0.0,100.0,15.0)
+solv_in = st.sidebar.number_input("Solvent (%)",0.0,100.0,5.0)
+sonic_in = st.sidebar.number_input("Sonication (min)",0,60,10)
+dls_in = st.sidebar.number_input("DLS (nm)",0.0,500.0,150.0)
+zeta_in = st.sidebar.number_input("Zeta (mV)",-100.0,100.0,-25.0)
+logp_in = st.sidebar.number_input("logP",0.0,10.0,5.0)
+solub_in = st.sidebar.number_input("Solubility (mg/L)",0.0,1000.0,0.02)
+mw_in = st.sidebar.number_input("MW (g/mol)",0.0,2000.0,800.0)
+lc50_in = st.sidebar.number_input("LC50 (ppm)",0.0,10.0,0.2)
+
+if st.sidebar.button("Add Data"):
+    if pest.strip() == "":
+        st.sidebar.error("Enter pesticide name")
+    else:
+        new_row = pd.DataFrame([{
+            "Pesticide":pest,
+            "AI":ai_in,
+            "Surfactant":surf_in,
+            "Solvent":solv_in,
+            "Sonication":sonic_in,
+            "DLS":dls_in,
+            "Zeta":zeta_in,
+            "logP":logp_in,
+            "Solubility":solub_in,
+            "MW":mw_in,
+            "LC50":lc50_in
+        }])
+        st.session_state.df = pd.concat([df,new_row],ignore_index=True)
+        st.success("Data Added")
+        st.rerun()
 
 # =============================
 # DATA VIEW
@@ -121,97 +79,89 @@ st.subheader("📊 Dataset")
 st.dataframe(df, use_container_width=True)
 
 # =============================
-# ADD DATA
+# DELETE DATA
 # =============================
-st.sidebar.header("➕ Add Data")
+st.subheader("🗑️ Delete Data")
 
-pest_input = st.sidebar.text_input("Pesticide")
+if len(df) > 0:
+    row_to_delete = st.selectbox(
+        "Select row",
+        df.index,
+        format_func=lambda x: f"{df.loc[x,'Pesticide']} | LC50={df.loc[x,'LC50']}"
+    )
 
-ai = st.sidebar.slider("AI (%)",1.0,20.0,10.0)
-surf = st.sidebar.slider("Surfactant (%)",5.0,30.0,15.0)
-solv = st.sidebar.slider("Solvent (%)",1.0,10.0,5.0)
-sonic = st.sidebar.slider("Sonication",1,30,10)
-dls = st.sidebar.slider("DLS",50,300,150)
-zeta = st.sidebar.slider("Zeta",-60,60,-25)
-logp = st.sidebar.number_input("logP",value=5.0)
-solub = st.sidebar.number_input("Solubility",value=0.02)
-mw = st.sidebar.number_input("MW",value=800.0)
-lc50 = st.sidebar.number_input("LC50",value=0.2)
-
-if st.sidebar.button("Save Data"):
-    new = pd.DataFrame([[pest_input,ai,surf,solv,sonic,dls,zeta,logp,solub,mw,lc50]],
-                       columns=df.columns)
-    df = pd.concat([df,new],ignore_index=True)
-    st.session_state.df = df
-    save_data(df)
-    st.success("Saved ✔")
+    if st.button("Delete Selected Row"):
+        if len(df) > 1:
+            st.session_state.df = df.drop(row_to_delete).reset_index(drop=True)
+            st.success("Deleted")
+            st.rerun()
+        else:
+            st.error("❌ Keep at least one row for model training")
 
 # =============================
 # MODEL
 # =============================
-if len(df) > 1:
+if len(df) < 1:
+    st.warning("⚠️ Dataset is empty. Add data first.")
+else:
+    X = df[[
+        "AI","Surfactant","Solvent","Sonication",
+        "DLS","Zeta","logP","Solubility","MW"
+    ]]
+    y = df["LC50"]
 
-    df_encoded = pd.get_dummies(df, columns=["Pesticide"])
-
-    X = df_encoded.drop(columns=["LC50"])
-    y = df_encoded["LC50"]
-
-    model = load_model()
-    model.fit(X, y)
-    save_model(model)
+    model = GradientBoostingRegressor()
+    model.fit(X,y)
 
     # =============================
-    # PREDICTION
+    # INPUT PARAMETERS
     # =============================
-    st.sidebar.header("⚙️ Prediction")
+    st.sidebar.subheader("⚙️ Input Parameters")
 
-    pest = st.sidebar.selectbox("Select Pesticide", df["Pesticide"].unique())
+    ai = st.sidebar.slider("AI (%)",1.0,20.0,10.0)
+    surf = st.sidebar.slider("Surfactant (%)",5.0,30.0,15.0)
+    solv = st.sidebar.slider("Solvent (%)",1.0,10.0,5.0)
+    sonic = st.sidebar.slider("Sonication (min)",1,30,10)
+    dls = st.sidebar.slider("DLS (nm)",50,300,150)
+    zeta = st.sidebar.slider("Zeta (mV)",-60,60,-25)
+    logp = st.sidebar.number_input("logP",value=5.0)
+    solub = st.sidebar.number_input("Solubility (mg/L)",value=0.02)
+    mw = st.sidebar.number_input("MW (g/mol)",value=800.0)
 
-    input_dict = {
-        "AI": ai,
-        "Surfactant": surf,
-        "Solvent": solv,
-        "Sonication": sonic,
-        "DLS": dls,
-        "Zeta": zeta,
-        "logP": logp,
-        "Solubility": solub,
-        "MW": mw
-    }
+    input_data = [[ai,surf,solv,sonic,dls,zeta,logp,solub,mw]]
 
-    for col in X.columns:
-        if "Pesticide_" in col:
-            input_dict[col] = 1 if col == f"Pesticide_{pest}" else 0
-
-    input_df = pd.DataFrame([input_dict])
-
-    pred = model.predict(input_df)[0]
+    pred = model.predict(input_data)[0]
     lc90 = pred * 2.5
 
+    # =============================
+    # RESULTS
+    # =============================
     st.subheader("📊 Results")
-    c1, c2 = st.columns(2)
-    c1.metric("LC50", round(pred,4))
-    c2.metric("LC90", round(lc90,4))
+
+    c1,c2 = st.columns(2)
+    c1.metric("LC50 (ppm)",f"{pred:.4f}")
+    c2.metric("LC90 (ppm)",f"{lc90:.4f}")
 
     # =============================
     # DLS
     # =============================
     st.subheader("📊 DLS Distribution")
 
-    data = np.random.normal(dls, dls*0.08, 800)
+    data = np.random.normal(dls,dls*0.08,800)
 
-    fig, ax = plt.subplots()
-    count,bins,_ = ax.hist(data, bins=20)
+    fig2, ax2 = plt.subplots()
+    count,bins,_ = ax2.hist(data,bins=20,edgecolor='black')
 
-    mu, sigma = norm.fit(data)
-    x = np.linspace(min(bins), max(bins), 200)
-    y_curve = norm.pdf(x, mu, sigma)
+    mu,sigma = norm.fit(data)
+    x = np.linspace(min(bins),max(bins),200)
+    y_curve = norm.pdf(x,mu,sigma)
+    y_scaled = y_curve * max(count)/max(y_curve)
 
-    ax.plot(x, y_curve * max(count)/max(y_curve), 'r')
-    ax.set_xlabel("Size (nm)")
-    ax.set_ylabel("Frequency")
+    ax2.plot(x,y_scaled,'r')
+    ax2.set_xlabel("Diameter (nm)")
+    ax2.set_ylabel("Number")
 
-    st.pyplot(fig)
+    st.pyplot(fig2)
 
     # =============================
     # ZETA
@@ -219,14 +169,14 @@ if len(df) > 1:
     st.subheader("⚡ Zeta Potential")
 
     x = np.linspace(-150,150,2000)
-    y_curve = np.exp(-(x - zeta)**2/(2*5**2))
+    power = np.exp(-(x - zeta)**2/(2*5**2))
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(x, y_curve, 'r')
-    ax2.set_xlabel("Zeta (mV)")
-    ax2.set_ylabel("Stability")
+    fig3, ax3 = plt.subplots()
+    ax3.plot(x,power,'r')
+    ax3.set_xlabel("Zeta (mV)")
+    ax3.set_ylabel("Power")
 
-    st.pyplot(fig2)
+    st.pyplot(fig3)
 
 # =============================
 # FOOTER
@@ -234,6 +184,6 @@ if len(df) > 1:
 st.markdown("---")
 st.markdown(
     "<center><b>Ahmed Abdulhakim</b><br>"
-    "NanoTox AI Platform</center>",
+    "ahmed.abdulhakim_a015@agr.kfs.edu.eg</center>",
     unsafe_allow_html=True
 )
