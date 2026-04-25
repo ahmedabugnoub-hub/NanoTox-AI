@@ -83,6 +83,7 @@ df_display.insert(0, "ID", range(1, len(df_display) + 1))
 st.dataframe(
     df_display,
     use_container_width=True,
+    hide_index=True,
     column_config={
         "ID": st.column_config.NumberColumn("ID", width="small")
     }
