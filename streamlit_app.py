@@ -18,7 +18,6 @@ st.caption("Manual Data Entry + Auto Training Model")
 # =============================
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame({
-        "ID":[1,2,3],
         "Pesticide":["Emamectin benzoate","Lambda-cyhalothrin","Imidacloprid"],
         "AI":[10,10,12],
         "Surfactant":[15,15,20],
@@ -56,10 +55,7 @@ if st.sidebar.button("Add Data"):
     if pest.strip() == "":
         st.sidebar.error("Enter pesticide name")
     else:
-        new_id = len(df) + 1
-
         new_row = pd.DataFrame([{
-            "ID":new_id,
             "Pesticide":pest,
             "AI":ai_in,
             "Surfactant":surf_in,
@@ -72,7 +68,6 @@ if st.sidebar.button("Add Data"):
             "MW":mw_in,
             "LC50":lc50_in
         }])
-
         st.session_state.df = pd.concat([df,new_row],ignore_index=True)
         st.success("Data Added")
         st.rerun()
@@ -81,7 +76,7 @@ if st.sidebar.button("Add Data"):
 # DATA VIEW
 # =============================
 st.subheader("📊 Dataset")
-st.dataframe(df.set_index("ID"), use_container_width=True)
+st.dataframe(df, use_container_width=True)
 
 # =============================
 # DELETE DATA
@@ -96,20 +91,15 @@ if len(df) > 0:
     )
 
     if st.button("Delete Selected Row"):
-        if len(df) > 1:
-            st.session_state.df = df.drop(row_to_delete).reset_index(drop=True)
-            # إعادة ترقيم ID
-            st.session_state.df["ID"] = range(1, len(st.session_state.df)+1)
-            st.success("Deleted")
-            st.rerun()
-        else:
-            st.error("❌ Keep at least one row for model training")
+        st.session_state.df = df.drop(row_to_delete).reset_index(drop=True)
+        st.success("Deleted")
+        st.rerun()
 
 # =============================
 # MODEL
 # =============================
 if len(df) < 1:
-    st.warning("⚠️ Dataset is empty. Add data first.")
+    st.info("Dataset is empty. Please add data.")
 else:
     X = df[[
         "AI","Surfactant","Solvent","Sonication",
