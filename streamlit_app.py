@@ -18,7 +18,7 @@ st.caption("Manual Data Entry + Auto Training Model")
 # =============================
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame({
-        "Pesticide":["Emamectin","Lambda","Imidacloprid"],
+        "Pesticide":["Emamectin benzoate","Lambda-cyhalothrin","Imidacloprid"],
         "AI":[10,10,12],
         "Surfactant":[15,15,20],
         "Solvent":[5,5,6],
@@ -73,10 +73,21 @@ if st.sidebar.button("Add Data"):
         st.rerun()
 
 # =============================
-# DATA VIEW
+# DATA VIEW + ID
 # =============================
 st.subheader("📊 Dataset")
-st.dataframe(df, use_container_width=True)
+
+df_display = df.copy()
+df_display.insert(0, "ID", range(1, len(df_display) + 1))
+
+st.dataframe(
+    df_display,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "ID": st.column_config.NumberColumn("ID", width="small")
+    }
+)
 
 # =============================
 # DELETE DATA
@@ -87,22 +98,53 @@ if len(df) > 0:
     row_to_delete = st.selectbox(
         "Select row",
         df.index,
-        format_func=lambda x: f"{df.loc[x,'Pesticide']} | LC50={df.loc[x,'LC50']}"
+        format_func=lambda x: f"{x+1} - {df.loc[x,'Pesticide']}"
     )
 
     if st.button("Delete Selected Row"):
-        if len(df) > 1:
-            st.session_state.df = df.drop(row_to_delete).reset_index(drop=True)
-            st.success("Deleted")
-            st.rerun()
-        else:
-            st.error("❌ Keep at least one row for model training")
+        st.session_state.df = df.drop(row_to_delete).reset_index(drop=True)
+        st.success("Deleted")
+        st.rerun()
+
+# =============================
+# EDIT DATA
+# =============================
+st.subheader("✏️ Edit Data")
+
+if len(df) > 0:
+    row_to_edit = st.selectbox(
+        "Select row to edit",
+        df.index,
+        format_func=lambda x: f"{x+1} - {df.loc[x,'Pesticide']}"
+    )
+
+    selected_row = df.loc[row_to_edit]
+
+    new_name = st.text_input("Pesticide Name", value=selected_row["Pesticide"])
+    new_ai = st.number_input("AI (%)", value=float(selected_row["AI"]))
+    new_surf = st.number_input("Surfactant (%)", value=float(selected_row["Surfactant"]))
+    new_solv = st.number_input("Solvent (%)", value=float(selected_row["Solvent"]))
+    new_sonic = st.number_input("Sonication (min)", value=int(selected_row["Sonication"]))
+    new_dls = st.number_input("DLS (nm)", value=float(selected_row["DLS"]))
+    new_zeta = st.number_input("Zeta (mV)", value=float(selected_row["Zeta"]))
+    new_logp = st.number_input("logP", value=float(selected_row["logP"]))
+    new_solub = st.number_input("Solubility", value=float(selected_row["Solubility"]))
+    new_mw = st.number_input("MW", value=float(selected_row["MW"]))
+    new_lc50 = st.number_input("LC50", value=float(selected_row["LC50"]))
+
+    if st.button("Update Row"):
+        st.session_state.df.loc[row_to_edit] = [
+            new_name,new_ai,new_surf,new_solv,new_sonic,
+            new_dls,new_zeta,new_logp,new_solub,new_mw,new_lc50
+        ]
+        st.success("Updated Successfully")
+        st.rerun()
 
 # =============================
 # MODEL
 # =============================
 if len(df) < 1:
-    st.warning("⚠️ Dataset is empty. Add data first.")
+    st.info("Dataset is empty. Please add data.")
 else:
     X = df[[
         "AI","Surfactant","Solvent","Sonication",
