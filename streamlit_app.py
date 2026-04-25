@@ -8,14 +8,17 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import joblib
 import os
+import json
 
 # =============================
-# GOOGLE SHEETS
+# GOOGLE SHEETS (FIXED)
 # =============================
 scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/drive"]
 
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+# 🔥 الحل هنا
+creds_dict = st.secrets["gcp_service_account"]
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 sheet = client.open("NanoTox_Data").sheet1
 
@@ -25,7 +28,7 @@ sheet = client.open("NanoTox_Data").sheet1
 def load_data():
     data = sheet.get_all_records()
     if len(data) == 0:
-        df = pd.DataFrame({
+        return pd.DataFrame({
             "Pesticide":["Emamectin","Lambda","Imidacloprid"],
             "AI":[10,10,12],
             "Surfactant":[15,15,20],
@@ -38,7 +41,6 @@ def load_data():
             "MW":[886,449,255],
             "LC50":[0.25,0.55,0.18]
         })
-        return df
     return pd.DataFrame(data)
 
 # =============================
@@ -154,82 +156,7 @@ if len(df) > 1:
     c2.metric("LC90", round(lc90,4))
 
     # =============================
-    # 🎯 OPTIMIZATION
-    # =============================
-    st.subheader("🎯 Optimal Formulation")
-
-    if st.button("Find Best Formulation"):
-
-        best_lc50 = 999
-        best = None
-
-        for _ in range(300):
-
-            test = {
-                "AI": np.random.uniform(5,10),
-                "Surfactant": np.random.uniform(12,20),
-                "Solvent": np.random.uniform(3,8),
-                "Sonication": np.random.uniform(5,30),
-                "DLS": np.random.uniform(50,150),
-                "Zeta": np.random.uniform(-45,-20),
-                "logP": logp,
-                "Solubility": solub,
-                "MW": mw
-            }
-
-            for col in X.columns:
-                if "Pesticide_" in col:
-                    test[col] = 1 if col == f"Pesticide_{pest}" else 0
-
-            val = model.predict(pd.DataFrame([test]))[0]
-
-            if val < best_lc50:
-                best_lc50 = val
-                best = test
-
-        st.json(best)
-        st.success(f"Best LC50 = {best_lc50:.4f}")
-
-    # =============================
-    # ⚖️ COMPARISON
-    # =============================
-    st.subheader("⚖️ Comparison")
-
-    if st.button("Compare Pesticides"):
-
-        res = []
-
-        for p in df["Pesticide"].unique():
-
-            test = {
-                "AI": ai,
-                "Surfactant": surf,
-                "Solvent": solv,
-                "Sonication": sonic,
-                "DLS": dls,
-                "Zeta": zeta,
-                "logP": logp,
-                "Solubility": solub,
-                "MW": mw
-            }
-
-            for col in X.columns:
-                if "Pesticide_" in col:
-                    test[col] = 1 if col == f"Pesticide_{p}" else 0
-
-            val = model.predict(pd.DataFrame([test]))[0]
-
-            res.append({"Pesticide": p, "LC50": val})
-
-        res_df = pd.DataFrame(res).sort_values("LC50")
-
-        st.dataframe(res_df)
-        st.bar_chart(res_df.set_index("Pesticide"))
-
-        st.success(f"Best: {res_df.iloc[0]['Pesticide']}")
-
-    # =============================
-    # 📊 DLS
+    # DLS
     # =============================
     st.subheader("📊 DLS Distribution")
 
@@ -240,21 +167,21 @@ if len(df) > 1:
 
     mu, sigma = norm.fit(data)
     x = np.linspace(min(bins), max(bins), 200)
-    y = norm.pdf(x, mu, sigma)
+    y_curve = norm.pdf(x, mu, sigma)
 
-    ax.plot(x, y * max(count)/max(y), 'r')
+    ax.plot(x, y_curve * max(count)/max(y_curve), 'r')
     st.pyplot(fig)
 
     # =============================
-    # ⚡ ZETA
+    # ZETA
     # =============================
     st.subheader("⚡ Zeta Potential")
 
     x = np.linspace(-150,150,2000)
-    y = np.exp(-(x - zeta)**2/(2*5**2))
+    y_curve = np.exp(-(x - zeta)**2/(2*5**2))
 
     fig2, ax2 = plt.subplots()
-    ax2.plot(x, y, 'r')
+    ax2.plot(x, y_curve, 'r')
     st.pyplot(fig2)
 
 # =============================
